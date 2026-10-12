@@ -69,6 +69,27 @@ Start the web assistant:
 streamlit run streamlit_app.py
 ```
 
+## Deploy to Streamlit Community Cloud
+
+1. Push this project to a GitHub repository.
+2. Sign in at [share.streamlit.io](https://share.streamlit.io/) using the
+   GitHub account that can access the repository.
+3. Choose **Create app**, select `Dipalikambale/jarvisAssistant`, branch
+   `main`, and main file path `streamlit_app.py`.
+4. In the deployment's **Advanced settings / Secrets**, add:
+
+   ```toml
+   GOOGLE_API_KEY = "your-new-Google-AI-Studio-key"
+   GEMINI_MODEL = "gemini-3.8-flash"
+   ```
+
+5. Deploy the app. Keep the API key in Streamlit Secrets; do not commit it to
+   GitHub. Streamlit Cloud secrets are supported directly by this app.
+
+The Streamlit app uses the visitor's browser for microphone capture. As with
+local usage, speech transcription and optional gTTS responses call external
+Google services.
+
 Say or type `help` for example commands. Say `exit`, `quit`, or `stop` to end
 the CLI session.
 

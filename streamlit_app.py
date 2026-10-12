@@ -1,6 +1,7 @@
 import hashlib
 
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 from jarvis_assistant.assistant import Assistant
 from jarvis_assistant.config import Settings
@@ -8,7 +9,11 @@ from jarvis_assistant.logging_config import configure_logging
 from jarvis_assistant.speech import synthesize_speech, transcribe_audio_file
 
 configure_logging()
-settings = Settings.from_environment()
+try:
+    cloud_secrets = st.secrets
+except StreamlitSecretNotFoundError:
+    cloud_secrets = None
+settings = Settings.from_environment(streamlit_secrets=cloud_secrets)
 st.set_page_config(
     page_title="JARVIS | Voice Assistant",
     page_icon="🎙️",
