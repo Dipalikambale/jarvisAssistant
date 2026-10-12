@@ -1,7 +1,13 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock
 
-from jarvis_assistant.gemini_client import _format_api_error
+from google.genai.errors import APIError
+
+from jarvis_assistant.gemini_client import (
+    _format_api_error,
+    _generate_with_503_retry,
+)
 
 
 class GeminiErrorTests(unittest.TestCase):
@@ -35,6 +41,48 @@ class GeminiErrorTests(unittest.TestCase):
         message = _format_api_error(error, "secret-key")
         self.assertIn("[REDACTED]", message)
         self.assertNotIn("secret-key", message)
+
+    def test_503_error_explains_temporary_overload(self) -> None:
+        error = SimpleNamespace(code=503, message="backend busy")
+        message = _format_api_error(error, "secret-key")
+        self.assertIn("temporarily overloaded", message)
+        self.assertIn("try again", message)
+
+    def test_503_retries_then_returns_success(self) -> None:
+        generate = Mock(
+            side_effect=[
+                APIError(503, {"error": {"message": "busy"}}),
+                SimpleNamespace(text="Recovered response"),
+            ]
+        )
+        sleep = Mock()
+
+        response = _generate_with_503_retry(
+            generate,
+            model="test-model",
+            contents="hello",
+            sleep=sleep,
+        )
+
+        self.assertEqual(response.text, "Recovered response")
+        self.assertEqual(generate.call_count, 2)
+        sleep.assert_called_once_with(1.0)
+
+    def test_non_503_api_error_is_not_retried(self) -> None:
+        error = APIError(429, {"error": {"message": "quota"}})
+        generate = Mock(side_effect=error)
+        sleep = Mock()
+
+        with self.assertRaises(APIError):
+            _generate_with_503_retry(
+                generate,
+                model="test-model",
+                contents="hello",
+                sleep=sleep,
+            )
+
+        generate.assert_called_once()
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

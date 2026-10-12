@@ -1,9 +1,13 @@
 import logging
+import time
 from collections.abc import Sequence
+from typing import Any, Callable
 
 from jarvis_assistant.config import Settings
 
 logger = logging.getLogger(__name__)
+
+_MAX_503_ATTEMPTS = 3
 
 
 def _format_api_error(error: Exception, api_key: str) -> str:
@@ -37,11 +41,40 @@ def _format_api_error(error: Exception, api_key: str) -> str:
     if status == 400:
         detail = f" Google reported: {message}" if message else ""
         return f"Gemini rejected the request as invalid.{detail}"
+    if status == 503:
+        return (
+            "Google Gemini is temporarily overloaded (HTTP 503). "
+            "Please wait a little and try again."
+        )
     if isinstance(status, int) and status >= 500:
         return f"Google Gemini is temporarily unavailable (HTTP {status}). Try again later."
     if message and message != str(error):
         return f"Gemini request failed: {message}"
     return "Gemini request failed. Check the API key, model, and network connection."
+
+
+def _generate_with_503_retry(
+    generate: Callable[..., Any],
+    *,
+    model: str,
+    contents: str,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Any:
+    from google.genai.errors import APIError
+
+    for attempt in range(_MAX_503_ATTEMPTS):
+        try:
+            return generate(model=model, contents=contents)
+        except APIError as error:
+            if error.code != 503 or attempt == _MAX_503_ATTEMPTS - 1:
+                raise
+            delay = 1.0 * (2**attempt)
+            logger.warning(
+                "Gemini is temporarily overloaded; retrying",
+                extra={"event": "gemini_retry", "attempt": attempt + 1},
+            )
+            sleep(delay)
+    raise RuntimeError("Gemini retry loop exited unexpectedly.")
 
 
 class GeminiClient:
@@ -79,7 +112,8 @@ class GeminiClient:
         from google.genai.errors import APIError
 
         try:
-            response = self._client.models.generate_content(
+            response = _generate_with_503_retry(
+                self._client.models.generate_content,
                 model=self._model,
                 contents=contents,
             )
